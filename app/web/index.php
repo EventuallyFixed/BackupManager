@@ -8,7 +8,6 @@ const SOURCE_ROOT = '/mnt/HD/HD_a2';
 const SHARE_ROOT = '/shares';
 const CONFIG_DIR = '.backupmanager';
 const CONFIG_FILE = 'config.json';
-if (!isset($_SESSION['bm_csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(24));
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function mountDecode(string $s): string { return preg_replace_callback('/\\\\([0-7]{3})/', static fn($m) => chr(octdec($m[1])), $s); }
 function mounts(): array {
@@ -18,7 +17,7 @@ function mounts(): array {
         if (count($p) < 3) continue;
         [$device,$mount,$type] = $p;
         $mount = mountDecode($mount);
-        if ($type !== 'ext4' || !strpos($mount, '/mnt/') === 0 || $mount === SOURCE_ROOT || strpos($mount, SOURCE_ROOT . '/') === 0) continue;
+        if ($type !== 'ext4' || strpos($mount, '/mnt/') !== 0 || $mount === SOURCE_ROOT || strpos($mount, SOURCE_ROOT . '/') === 0) continue;
         if (!is_dir($mount)) continue;
         $out[$mount] = ['path'=>$mount, 'device'=>mountDecode($device), 'type'=>$type];
     }
@@ -26,7 +25,7 @@ function mounts(): array {
     return $out;
 }
 function diskUuid(string $device): ?string {
-    if (!strpos($device, '/dev/') === 0) return null;
+    if (strpos($device, '/dev/') !== 0) return null;
     $cmd = '/usr/bin/blkid -s UUID -o value ' . escapeshellarg($device) . ' 2>/dev/null';
     $value = trim((string) shell_exec($cmd));
     return preg_match('/^[a-zA-Z0-9-]{8,80}$/D', $value) ? $value : null;
@@ -72,7 +71,7 @@ if (!isset($disks[$selected])) $selected = (count($disks) ? key($disks) : '');
 $available = sources();
 $message = ''; $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!hash_equals($_SESSION['csrf'], (string)($_POST['csrf'] ?? ''))) { http_response_code(403); $error='Invalid request token.'; }
+    if (!hash_equals($_SESSION['bm_csrf'], (string)($_POST['csrf'] ?? ''))) { http_response_code(403); $error='Invalid request token.'; }
     elseif (($_POST['action'] ?? '') === 'save' && isset($disks[$selected])) {
         $requested = $_POST['sources'] ?? [];
         if (!is_array($requested)) $requested = [];
