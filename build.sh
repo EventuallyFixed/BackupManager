@@ -9,7 +9,7 @@ set -Eeuo pipefail
 BM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_SOURCE="$BM_ROOT/app"
 
-STAGE="${BUILDER_STAGE:-$HOME/NextCloud/src/NAS_Apps/EncDiskManager-build-0.5.2}"
+STAGE="${BUILDER_STAGE:-$HOME/Nextcloud/src/BackupManager_Staging}"
 BUILDER_APP="$STAGE/apps/BackupManager"
 HELPERS="$STAGE/apps/build_helpers.sh"
 APKG_HELPERS="$STAGE/apps/apkg_helpers.sh"
