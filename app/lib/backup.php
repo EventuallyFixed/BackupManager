@@ -69,6 +69,23 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             // A per-share link destination keeps the same directory structure each run.
             $cmd = '/usr/sbin/rsync -aPr --delete'
                 . ' --log-file=' . escapeshellarg($log);
+            // Preserve the exclusions from the supplied rsync script.
+            $excludes = [
+                'docker_nas_bin', '.USB', '.groupingDb', '.systemfile',
+                '.twonkymedia', '.wdmc', 'Nas_Prog', 'SmartWare',
+                'TimeMachineBackup', 'Transmission', 'lost+found',
+                'otaclient', 'restsdk-data', 'restsdk-info', 'plex_conf', '_un'
+            ];
+            if ($name === 'docker') {
+                $excludes[] = 'nextcloud_data/appdata*';
+                $excludes[] = 'mariadb/var/lib/mysql';
+                $excludes[] = 'nextcloud';
+                // The original command included nextcloud/config before
+                // excluding nextcloud; preserve its order and intent.
+            }
+            foreach ($excludes as $exclude) {
+                $cmd .= ' --exclude=' . escapeshellarg($exclude);
+            }
             if ($previous !== null && is_dir($previous . '/' . $name)) {
                 $cmd .= ' --link-dest=' . escapeshellarg($previous . '/' . $name);
             }
