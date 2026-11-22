@@ -1,5 +1,5 @@
 Package: BackupManager
-Version: 0.1.0
+Version: 1.0.0
 Packager: Local
 Description: Backup management for WD My Cloud OS5 NAS devices
 Icon: logo.svg
