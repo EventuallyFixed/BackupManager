@@ -52,7 +52,6 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
     }
     // Process detection replaces the old lock; no persistent PID or lock file.
     // Simultaneous submissions may still race before rsync starts.
-    {
         // Recheck destination before beginning.
         if (!isset(mounts()[$mount]) || diskUuid($disk['device']) !== $uuid) {
             throw new RuntimeException('Destination changed before backup started.');
@@ -133,5 +132,4 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             throw new RuntimeException('Backup finished but could not update the current snapshot link.');
         }
         return 'Backup completed: ' . $snapshot;
-    }
 }
