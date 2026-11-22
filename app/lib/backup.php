@@ -191,7 +191,6 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
         if (file_exists($target) || is_link($target) || !mkdir($target, 0755)) {
             throw new RuntimeException('Cannot create a unique snapshot directory.');
         }
-        bm_set_snapshot_status($mount, $snapshot, 'Running');
         $runningLink = $root . '/running';
         if (is_link($runningLink) || file_exists($runningLink)) {
             throw new RuntimeException('A running backup pointer already exists; inspect it before starting another backup.');
@@ -199,6 +198,7 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
         if (!symlink($snapshot, $runningLink)) {
             throw new RuntimeException('Could not create running backup pointer.');
         }
+        bm_set_snapshot_status($mount, $snapshot, 'Running');
         try {
         $current = $root . '/current';
         $previous = null;
@@ -273,7 +273,7 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
                 if ($removed === null) {
                     throw new RuntimeException('Disk full, but no older snapshot can be safely removed. Current backup preserved; incomplete snapshot retained.');
                 }
-                @file_put_contents($log, "\\nBackupManager: disk full; removed oldest backup " . $removed . " and retrying " . $name . ".\\n", FILE_APPEND);
+                @file_put_contents($log, "\nBackupManager: disk full; removed oldest backup " . $removed . " and retrying " . $name . ".\n", FILE_APPEND);
             }
         }
         $newLink = $root . '/.current-' . $stamp;
