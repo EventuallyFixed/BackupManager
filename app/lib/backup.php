@@ -2,6 +2,19 @@
 /* Incremental rsync snapshots for BackupManager, PHP 7.4. */
 declare(strict_types=1);
 
+function bm_backup_running(string $mount): bool {
+    $dir = $mount . '/.backupmanager';
+    if (is_link($dir) || !is_dir($dir)) return false;
+    $path = $dir . '/backup.lock';
+    if (!is_file($path) || is_link($path)) return false;
+    $handle = @fopen($path, 'r');
+    if ($handle === false) return false;
+    $free = @flock($handle, LOCK_EX | LOCK_NB);
+    if ($free) flock($handle, LOCK_UN);
+    fclose($handle);
+    return !$free;
+}
+
 function bm_run_backup(string $mount, array $disk, array $available, array $config): string {
     $uuid = diskUuid($disk['device']);
     if ($uuid === null || ($config['filesystem_uuid'] ?? '') !== $uuid) {
