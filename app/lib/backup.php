@@ -1,6 +1,7 @@
 <?php
 /* Incremental rsync snapshots for BackupManager, PHP 7.4. */
 declare(strict_types=1);
+require_once __DIR__ . '/filters.php';
 
 function bm_rsync_processes(string $mount): array {
     $root = $mount . '/backup/';
@@ -225,22 +226,12 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             // A per-share link destination keeps the same directory structure each run.
             $cmd = '/usr/sbin/rsync -aP --delete'
                 . ' --log-file=' . escapeshellarg($log);
-            // Preserve the exclusions from the supplied rsync script.
-            $excludes = [
-                'docker_nas_bin', '.USB', '.groupingDb', '.systemfile',
-                '.twonkymedia', '.wdmc', 'Nas_Prog', 'SmartWare',
-                'TimeMachineBackup', 'Transmission', 'lost+found',
-                'otaclient', 'restsdk-data', 'restsdk-info', 'plex_conf', '_un'
-            ];
-            if ($name === 'docker') {
-                $excludes[] = 'nextcloud_data/appdata*';
-                $excludes[] = 'mariadb/var/lib/mysql';
-                $excludes[] = 'nextcloud';
-                // The original command included nextcloud/config before
-                // excluding nextcloud; preserve its order and intent.
-            }
-            foreach ($excludes as $exclude) {
-                $cmd .= ' --exclude=' . escapeshellarg($exclude);
+            // Order matters: rsync evaluates include/exclude rules in sequence.
+            // Legacy disks without filters retain the original defaults.
+            $filters = bm_validate_filters($config['filters'] ?? bm_default_filters());
+            foreach ($filters as $filter) {
+                if ($filter['share'] !== '*' && $filter['share'] !== $name) continue;
+                $cmd .= ' --' . $filter['type'] . '=' . escapeshellarg($filter['pattern']);
             }
             if ($previous !== null && is_dir($previous . '/' . $name)) {
                 $cmd .= ' --link-dest=' . escapeshellarg($previous . '/' . $name);
