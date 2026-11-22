@@ -105,6 +105,50 @@ if (($_GET['action'] ?? '') === 'backup-status') {
         'free' => $selected !== '' && disk_free_space($selected) !== false ? bmSize((float) disk_free_space($selected)) : 'Unavailable']);
     exit;
 }
+// Display or download the rsync log associated with one snapshot.
+if (($_GET['action'] ?? '') === 'view-log' || ($_GET['action'] ?? '') === 'download-log') {
+    $snapshot = (string) ($_GET['snapshot'] ?? '');
+    $download = $_GET['action'] === 'download-log';
+    $validName = preg_match('/^backup_([0-9]{8}_[0-9]{6})$/D', $snapshot, $matches);
+    $root = $selected . '/backup';
+    $snapshotDir = $root . '/' . $snapshot;
+    $logDir = $selected . '/log';
+    $log = $validName ? $logDir . '/rsync_timemachine_' . $matches[1] . '.log' : '';
+    if ($selected === '' || !$validName || is_link($root) || !is_dir($root)
+        || is_link($snapshotDir) || !is_dir($snapshotDir)
+        || is_link($logDir) || !is_dir($logDir)
+        || $log === '' || is_link($log) || !is_file($log)) {
+        http_response_code(404);
+        $log = '';
+    }
+    if ($download && $log !== '') {
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . basename($log) . '"');
+        header('X-Content-Type-Options: nosniff');
+        readfile($log);
+        exit;
+    }
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-store');
+    $back = '?disk=' . rawurlencode($selected);
+    $downloadUrl = '?disk=' . rawurlencode($selected) . '&action=download-log&snapshot=' . rawurlencode($snapshot);
+    echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Backup log - BackupManager</title><style>body{font:15px system-ui,sans-serif;background:#f5f7fa;color:#1d2939;margin:0}main{max-width:1100px;margin:35px auto;padding:0 18px}.panel{background:white;border:1px solid #e0e5ec;border-radius:12px;padding:22px}a.button{display:inline-block;background:#165caa;color:white;text-decoration:none;padding:10px 14px;border-radius:7px;margin:0 12px 15px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px monospace;background:#f8fafc;padding:15px;border:1px solid #e0e5ec;border-radius:7px}</style></head><body><main><h1>Backup log</h1><p>' . h($snapshot) . '</p><a class="button" href="' . h($back) . '">Back to backups</a>';
+    if ($log !== '') {
+        echo '<a class="button" href="' . h($downloadUrl) . '">Download log</a><section class="panel"><pre>';
+        $handle = fopen($log, 'rb');
+        if ($handle !== false) {
+            while (!feof($handle)) {
+                echo h((string) fread($handle, 65536));
+            }
+            fclose($handle);
+        }
+        echo '</pre></section>';
+    } else {
+        echo '<section class="panel"><p>No log is available for this snapshot.</p></section>';
+    }
+    echo '</main></body></html>';
+    exit;
+}
 $available = sources();
 $message = ''; $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -179,7 +223,7 @@ $runningSnapshot = $running ? bm_running_snapshot($selected) : null;
 <?php if ($message): ?><p class="good"><?=h($message)?></p><?php endif; ?><?php if ($error): ?><p class="error"><?=h($error)?></p><?php endif; ?>
 <section class="panel"><h2>Destination disk</h2><?php if (!$disks): ?><p class="warn">No mounted USB ext4 destination disks detected.</p><?php else: ?><form method="get"><select name="disk" onchange="this.form.submit()" aria-label="Destination disk"><?php foreach ($disks as $path=>$disk): ?><option value="<?=h($path)?>" <?=$path===$selected?'selected':''?>><?=h($path)?></option><?php endforeach; ?></select><noscript><button>Choose disk</button></noscript></form><p class="small muted">Available space: <span id="disk-free"><?=h(disk_free_space($selected) !== false ? bmSize((float) disk_free_space($selected)) : 'Unavailable')?></span> / <?=h(disk_total_space($selected) !== false ? bmSize((float) disk_total_space($selected)) : 'Unavailable')?> total</p><p class="small muted">Device mapper: <?=h($disks[$selected]['device'] ?? 'Unavailable')?></p><p class="small muted">Filesystem UUID: <?=h($uuid ?? 'Unavailable')?></p><?php endif; ?></section>
 <?php if ($selected !== ''): ?><section class="panel"><h2>Backup status</h2><?php if (!$valid): ?><p class="warn">No valid backup configuration for this disk. Backups are disabled until you save a valid selection.</p><?php endif; ?><?php if ($valid): ?><form method="post" id="backup-form" class="backup-actions"><input type="hidden" name="csrf" value="<?=h($_SESSION['bm_csrf'])?>"><input type="hidden" name="disk" value="<?=h($selected)?>"><input type="hidden" name="action" value="backup"><button type="submit" id="backup-button" <?=$running?'disabled class="is-running" aria-busy="true"':''?>><span class="spinner" aria-hidden="true"></span><span id="backup-button-label"><?=$running?'Backup running…':'Start backup'?></span></button></form><?php else: ?><button disabled>Start backup</button><?php endif; ?><form method="post" id="stop-form" <?=$running?'':'hidden'?>><input type="hidden" name="csrf" value="<?=h($_SESSION['bm_csrf'])?>"><input type="hidden" name="disk" value="<?=h($selected)?>"><input type="hidden" name="action" value="stop"><button class="stop" id="stop-button" type="submit">Stop backup</button></form></section>
-<section class="panel"><h2>Available backups (<?=count($backups)?>)</h2><table id="backups-table"><thead><tr><th aria-sort="descending"><button type="button" class="sort-heading" data-column="0">Backup directory <span class="sort-arrow" aria-hidden="true">▼</span></button></th><th><button type="button" class="sort-heading" data-column="1">Date and time (NAS local) <span class="sort-arrow" aria-hidden="true"></span></button></th><th><button type="button" class="sort-heading" data-column="2">Status <span class="sort-arrow" aria-hidden="true"></span></button></th><th>Action</th></tr></thead><tbody><?php foreach ($backups as $b): ?><tr data-sort-name="<?=h($b['name'])?>"><td><code><?=h($b['name'])?></code></td><td><?=h($b['date'])?></td><td class="backup-status" data-snapshot="<?=h($b['name'])?>"><?=h(bm_snapshot_status($selected, $b['name']))?></td><td><form method="post" class="delete-form" data-snapshot="<?=h($b['name'])?>"><input type="hidden" name="csrf" value="<?=h($_SESSION['bm_csrf'])?>"><input type="hidden" name="disk" value="<?=h($selected)?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="snapshot" value="<?=h($b['name'])?>"><label class="small" aria-label="Confirm deletion"><input type="checkbox" name="confirm_delete" value="yes" autocomplete="off"></label> <button type="submit" class="delete" disabled>Delete</button></form></td></tr><?php endforeach; ?><?php if (!$backups): ?><tr><td colspan="4" class="muted">No backups found on this disk.</td></tr><?php endif; ?></tbody></table></section>
+<section class="panel"><h2>Available backups (<?=count($backups)?>)</h2><table id="backups-table"><thead><tr><th aria-sort="descending"><button type="button" class="sort-heading" data-column="0">Backup directory <span class="sort-arrow" aria-hidden="true">▼</span></button></th><th><button type="button" class="sort-heading" data-column="1">Date and time (NAS local) <span class="sort-arrow" aria-hidden="true"></span></button></th><th><button type="button" class="sort-heading" data-column="2">Status <span class="sort-arrow" aria-hidden="true"></span></button></th><th>Action</th></tr></thead><tbody><?php foreach ($backups as $b): ?><tr data-sort-name="<?=h($b['name'])?>"><td><code><?=h($b['name'])?></code></td><td><?=h($b['date'])?></td><td class="backup-status" data-snapshot="<?=h($b['name'])?>"><?php $status = bm_snapshot_status($selected, $b['name']); if (strpos($status, 'Error') === 0): ?><a href="?disk=<?=rawurlencode($selected)?>&amp;action=view-log&amp;snapshot=<?=rawurlencode($b['name'])?>"><?=h($status)?></a><?php else: ?><?=h($status)?><?php endif; ?></td><td><form method="post" class="delete-form" data-snapshot="<?=h($b['name'])?>"><input type="hidden" name="csrf" value="<?=h($_SESSION['bm_csrf'])?>"><input type="hidden" name="disk" value="<?=h($selected)?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="snapshot" value="<?=h($b['name'])?>"><label class="small" aria-label="Confirm deletion"><input type="checkbox" name="confirm_delete" value="yes" autocomplete="off"></label> <button type="submit" class="delete" disabled>Delete</button></form></td></tr><?php endforeach; ?><?php if (!$backups): ?><tr><td colspan="4" class="muted">No backups found on this disk.</td></tr><?php endif; ?></tbody></table></section>
 <section class="panel"><h2>Configuration — backup sources</h2><p class="muted">Select shares linked directly to <?=h(SOURCE_ROOT)?>. Settings are saved on this destination disk.</p><form method="post"><input type="hidden" name="csrf" value="<?=h($_SESSION['bm_csrf'])?>"><input type="hidden" name="disk" value="<?=h($selected)?>"><input type="hidden" name="action" value="save"><?php foreach ($available as $name=>$path): ?><label class="share"><input type="checkbox" name="sources[]" value="<?=h($name)?>" <?=in_array($name,$checked,true)?'checked':''?>><strong><?=h($name)?></strong><code class="muted"><?=h($path)?></code></label><?php endforeach; ?><?php if (!$available): ?><p class="warn">No eligible shares detected.</p><?php endif; ?><p><button <?=!$available?'disabled':''?>>Save configuration</button></p></form></section><?php endif; ?>
 </main><script>
 (function () {
@@ -229,7 +273,16 @@ $runningSnapshot = $running ? bm_running_snapshot($selected) : null;
     function showRunning(running, snapshot, statuses) {
         document.querySelectorAll('.backup-status').forEach(function (cell) {
             var name = cell.getAttribute('data-snapshot');
-            cell.textContent = statuses && statuses[name] ? statuses[name] : (running && snapshot === name ? 'Running' : 'Error');
+            var status = statuses && statuses[name] ? statuses[name] : (running && snapshot === name ? 'Running' : 'Error');
+            cell.textContent = '';
+            if (status.indexOf('Error') === 0) {
+                var link = document.createElement('a');
+                link.href = '?disk=' + encodeURIComponent(<?=json_encode($selected)?>) + '&action=view-log&snapshot=' + encodeURIComponent(name);
+                link.textContent = status;
+                cell.appendChild(link);
+            } else {
+                cell.textContent = status;
+            }
         });
         button.disabled = running;
         document.querySelectorAll('form.delete-form').forEach(function (deleteForm) {
