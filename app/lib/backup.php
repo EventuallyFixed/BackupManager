@@ -36,7 +36,25 @@ function bm_snapshot_status(string $mount, string $snapshot): string {
     if ($status === 'Error' || $status === 'Cancelled') return $status;
     if (in_array($snapshot, bm_rsync_processes($mount), true)) return 'Running';
     if ($status === 'Running' || ($status !== '' && $status !== 'Complete')) return 'Error - Incomplete';
-    return 'Complete'; // Legacy snapshots without a marker are assumed successful.
+    return $status === 'Complete' ? 'Complete' : 'Error - Incomplete';
+}
+
+function bm_backfill_snapshots(string $mount, array $names): int {
+    if (bm_backup_running($mount)) throw new RuntimeException('Cannot import snapshots during a backup.');
+    $root = $mount . '/backup';
+    if (is_link($root) || !is_dir($root)) throw new RuntimeException('Backup directory unavailable.');
+    $count = 0;
+    foreach ($names as $name) {
+        if (!is_string($name) || !preg_match('/^backup_[0-9]{8}_[0-9]{6}$/D', $name)) continue;
+        $dir = $root . '/' . $name;
+        $marker = $dir . '/.backupmanager-status';
+        if (is_link($dir) || !is_dir($dir) || is_link($marker) || file_exists($marker)) continue;
+        if (@file_put_contents($marker, "Complete\n", LOCK_EX) === false) {
+            throw new RuntimeException('Could not mark snapshot ' . $name . ' as Complete.');
+        }
+        $count++;
+    }
+    return $count;
 }
 
 function bm_set_snapshot_status(string $mount, string $snapshot, string $status): void {
@@ -197,11 +215,7 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             @unlink($newLink);
             throw new RuntimeException('Backup finished but could not update the current snapshot link.');
         }
-        // A successful snapshot needs no status marker.
-        $statusFile = $target . '/.backupmanager-status';
-        if (is_file($statusFile) && !is_link($statusFile) && !@unlink($statusFile)) {
-            throw new RuntimeException('Backup finished but could not clear its status marker.');
-        }
+        bm_set_snapshot_status($mount, $snapshot, 'Complete');
         return 'Backup completed: ' . $snapshot;
         } catch (Throwable $e) {
             bm_set_snapshot_status($mount, $snapshot, 'Error');
