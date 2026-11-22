@@ -19,8 +19,26 @@ function bm_running_snapshot(string $mount): ?string {
     if (!bm_backup_running($mount)) return null;
     $path = $mount . '/.backupmanager/backup.lock';
     $name = trim((string) @file_get_contents($path));
-    if (!preg_match('/^backup_[0-9]{8}_[0-9]{6}$/D', $name)) return null;
-    return is_dir($mount . '/backup/' . $name) ? $name : null;
+    if (preg_match('/^backup_[0-9]{8}_[0-9]{6}$/D', $name)
+        && is_dir($mount . '/backup/' . $name)) return $name;
+
+    // Backups started before snapshot tracking was added have an empty lock.
+    // In that case, identify the newest snapshot newer than the completed
+    // 'current' target. Never label an older completed snapshot as running.
+    $root = $mount . '/backup';
+    if (!is_dir($root) || is_link($root)) return null;
+    $current = realpath($root . '/current');
+    $completed = ($current !== false && dirname($current) === realpath($root))
+        ? basename($current) : '';
+    $candidates = [];
+    foreach (scandir($root) ?: [] as $entry) {
+        if (!preg_match('/^backup_[0-9]{8}_[0-9]{6}$/D', $entry)
+            || !is_dir($root . '/' . $entry) || is_link($root . '/' . $entry)) continue;
+        if ($completed !== '' && strcmp($entry, $completed) <= 0) continue;
+        $candidates[] = $entry;
+    }
+    rsort($candidates, SORT_STRING);
+    return $candidates[0] ?? null;
 }
 
 function bm_run_backup(string $mount, array $disk, array $available, array $config): string {
