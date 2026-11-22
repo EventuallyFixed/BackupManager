@@ -50,7 +50,8 @@ echo "Stage:   $STAGE"
 [[ -d "$APP_SOURCE" ]] || die "App source directory is missing."
 [[ -f "$APP_SOURCE/apkg.rc" ]] || die "app/apkg.rc is missing."
 [[ -f "$APP_SOURCE/build.sh" ]] || die "app/build.sh is missing."
-[[ -f "$BM_ROOT/web/index.php" ]] || die "web/index.php is missing."
+[[ -f "$APP_SOURCE/web/index.php" ]] || die "app/web/index.php is missing."
+[[ -f "$APP_SOURCE/lib/auth.php" ]] || die "app/lib/auth.php is missing."
 [[ -f "$HELPERS" ]] || die "Builder build_helpers.sh is missing."
 [[ -f "$APKG_HELPERS" ]] || die "Builder apkg_helpers.sh is missing."
 [[ -f "$STAGE/build.sh" ]] || die "Builder root build.sh is missing."
@@ -101,15 +102,12 @@ fi
 
 # Stage only the NAS-installable runtime payload.
 cp -a "$APP_SOURCE" "$BUILDER_APP"
-mkdir -p "$BUILDER_APP/web"
-cp "$BM_ROOT/web/index.php" "$BUILDER_APP/web/index.php"
 chmod +x "$BUILDER_APP/build.sh"
 
 # Check the staged copy is identical to the source, apart from the
 # executable bit applied to build.sh.
 diff -qr \
     --exclude=build.sh \
-    --exclude=web \
     "$APP_SOURCE" "$BUILDER_APP" ||
     die "Staged app differs from standalone app source."
 
@@ -135,6 +133,10 @@ ARCHIVE="$STAGE_RELEASE/BackupManager_${VERSION}_armhf.tar.gz"
 BINARY="$STAGE_RELEASE/BackupManager_${VERSION}_${MODEL}.bin"
 
 [[ -s "$ARCHIVE" ]] || die "ARM archive was not produced."
+for required in web/index.php lib/auth.php init.sh install.sh apkg.rc; do
+    tar -tzf "$ARCHIVE" | grep -Eq "(^|/)${required//\//\\/}$" ||
+        die "Required runtime file missing from archive: $required"
+done
 [[ -s "$BINARY" ]] || die "Model package was not produced."
 
 gzip -t "$ARCHIVE" || die "ARM archive failed gzip integrity check."
