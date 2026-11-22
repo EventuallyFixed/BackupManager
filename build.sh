@@ -68,8 +68,8 @@ ORIGINAL_BUILDER="/home/steven/Nextcloud/src/WD-NAS-App-Builder-main"
 [[ "$STAGE_REAL" != "$(realpath "$ORIGINAL_BUILDER")" ]] ||
     die "Refusing to use the original builder workspace."
 
-[[ "$(basename "$STAGE_REAL")" == "BackupManager-build" ]] ||
-    die "Unexpected staging directory."
+[[ "$STAGE_REAL" == /home/steven/Nextcloud/src/* ]] ||
+    die "Builder staging directory is outside the expected source workspace."
 
 # Limit the model to names supported by this builder.
 case " WDCloud WDMyCloud WDMyCloudMirror WDMyCloudEX4100 WDMyCloudEX2100 MyCloudEX2Ultra MyCloudPR4100 MyCloudPR2100 WDMyCloudDL4100 WDMyCloudDL2100 " in
