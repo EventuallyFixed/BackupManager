@@ -96,7 +96,8 @@ if (!isset($disks[$selected])) $selected = (count($disks) ? key($disks) : '');
 if (($_GET['action'] ?? '') === 'backup-status') {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
-    echo json_encode(['running' => $selected !== '' && bm_backup_running($selected)]);
+    echo json_encode(['running' => $selected !== '' && bm_backup_running($selected),
+        'snapshot' => $selected !== '' ? bm_running_snapshot($selected) : null]);
     exit;
 }
 $available = sources();
@@ -151,13 +152,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'backu
 $checked = $config['sources'] ?? [];
 $backups = $selected !== '' ? snapshots($selected) : [];
 $running = $selected !== '' && bm_backup_running($selected);
+$runningSnapshot = $running ? bm_running_snapshot($selected) : null;
 ?><!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BackupManager</title>
 <style>body{font:15px system-ui,sans-serif;background:#f5f7fa;color:#1d2939;margin:0}main{max-width:950px;margin:35px auto;padding:0 18px}header{display:flex;align-items:center;justify-content:space-between}h1{font-size:26px}h2{font-size:19px;margin-top:0}.panel{background:white;border:1px solid #e0e5ec;border-radius:12px;padding:22px;margin:18px 0}select,button{font:inherit;padding:9px 12px;border-radius:7px;border:1px solid #b8c1cc}select{width:100%;max-width:650px}button{background:#165caa;color:white;border-color:#165caa;cursor:pointer}button:disabled{background:#d5d9df;border-color:#d5d9df;color:#697586;cursor:not-allowed}.spinner{display:none;width:15px;height:15px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-3px;margin-right:8px;animation:bm-spin .7s linear infinite}button.is-running .spinner{display:inline-block}@keyframes bm-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation-duration:2s}}.muted{color:#667085}.warn{color:#a15c00}.good{color:#167047}.error{color:#b42318}table{border-collapse:collapse;width:100%}th,td{text-align:left;border-bottom:1px solid #e7eaf0;padding:11px 8px}th{color:#667085}label.share{display:flex;gap:12px;align-items:center;padding:10px;border-bottom:1px solid #eee}code{font-size:12px;overflow-wrap:anywhere}.small{font-size:13px}</style></head><body><main><header><h1>BackupManager</h1><span class="muted">WD My Cloud OS5 · Stage 1</span></header>
 <?php if ($message): ?><p class="good"><?=h($message)?></p><?php endif; ?><?php if ($error): ?><p class="error"><?=h($error)?></p><?php endif; ?>
 <section class="panel"><h2>Destination disk</h2><?php if (!$disks): ?><p class="warn">No mounted USB ext4 destination disks detected.</p><?php else: ?><form method="get"><select name="disk" onchange="this.form.submit()" aria-label="Destination disk"><?php foreach ($disks as $path=>$disk): ?><option value="<?=h($path)?>" <?=$path===$selected?'selected':''?>><?=h($path)?></option><?php endforeach; ?></select><noscript><button>Choose disk</button></noscript></form><p class="small muted">Device mapper: <?=h($disks[$selected]['device'] ?? 'Unavailable')?></p><p class="small muted">Filesystem UUID: <?=h($uuid ?? 'Unavailable')?></p><?php endif; ?></section>
 <?php if ($selected !== ''): ?><section class="panel"><h2>Backup status</h2><?php if (!$valid): ?><p class="warn">No valid backup configuration for this disk. Backups are disabled until you save a valid selection.</p><?php endif; ?><?php if ($valid): ?><form method="post" id="backup-form"><input type="hidden" name="csrf" value="<?=h($_SESSION['bm_csrf'])?>"><input type="hidden" name="disk" value="<?=h($selected)?>"><input type="hidden" name="action" value="backup"><button type="submit" id="backup-button" <?=$running?'disabled class="is-running" aria-busy="true"':''?>><span class="spinner" aria-hidden="true"></span><span id="backup-button-label"><?=$running?'Backup running…':'Start backup'?></span></button></form><?php else: ?><button disabled>Start backup</button><?php endif; ?></section>
-<section class="panel"><h2>Available backups (<?=count($backups)?>)</h2><table><thead><tr><th>Backup directory</th><th>Date and time (NAS local)</th></tr></thead><tbody><?php foreach ($backups as $b): ?><tr><td><code><?=h($b['name'])?></code></td><td><?=h($b['date'])?></td></tr><?php endforeach; ?><?php if (!$backups): ?><tr><td colspan="2" class="muted">No backups found on this disk.</td></tr><?php endif; ?></tbody></table></section>
+<section class="panel"><h2>Available backups (<?=count($backups)?>)</h2><table><thead><tr><th>Backup directory</th><th>Date and time (NAS local)</th></tr></thead><tbody><?php foreach ($backups as $b): ?><tr><td><code><?=h($b['name'])?></code><span class="backup-running" data-snapshot="<?=h($b['name'])?>" <?=$runningSnapshot===$b['name']?'':'hidden'?>>(running)</span></td><td><?=h($b['date'])?></td></tr><?php endforeach; ?><?php if (!$backups): ?><tr><td colspan="2" class="muted">No backups found on this disk.</td></tr><?php endif; ?></tbody></table></section>
 <section class="panel"><h2>Configuration — backup sources</h2><p class="muted">Select shares linked directly to <?=h(SOURCE_ROOT)?>. Settings are saved on this destination disk.</p><form method="post"><input type="hidden" name="csrf" value="<?=h($_SESSION['bm_csrf'])?>"><input type="hidden" name="disk" value="<?=h($selected)?>"><input type="hidden" name="action" value="save"><?php foreach ($available as $name=>$path): ?><label class="share"><input type="checkbox" name="sources[]" value="<?=h($name)?>" <?=in_array($name,$checked,true)?'checked':''?>><strong><?=h($name)?></strong><code class="muted"><?=h($path)?></code></label><?php endforeach; ?><?php if (!$available): ?><p class="warn">No eligible shares detected.</p><?php endif; ?><p><button <?=!$available?'disabled':''?>>Save configuration</button></p></form></section><?php endif; ?>
 </main><script>
 (function () {
@@ -166,7 +168,10 @@ $running = $selected !== '' && bm_backup_running($selected);
     var label = document.getElementById('backup-button-label');
     if (!form || !button) return;
     var statusUrl = '?disk=' + encodeURIComponent(<?=json_encode($selected)?>) + '&action=backup-status';
-    function showRunning(running) {
+    function showRunning(running, snapshot) {
+        document.querySelectorAll('.backup-running').forEach(function (tag) {
+            tag.hidden = !(running && snapshot === tag.getAttribute('data-snapshot'));
+        });
         button.disabled = running;
         button.classList.toggle('is-running', running);
         if (running) button.setAttribute('aria-busy', 'true');
@@ -177,11 +182,11 @@ $running = $selected !== '' && bm_backup_running($selected);
         fetch(statusUrl, {credentials: 'same-origin', cache: 'no-store'})
             .then(function (response) { return response.ok ? response.json() : null; })
             .then(function (data) {
-                if (data && typeof data.running === 'boolean') showRunning(data.running);
+                if (data && typeof data.running === 'boolean') showRunning(data.running, data.snapshot);
             })
             .catch(function () {});
     }
-    form.addEventListener('submit', function () { showRunning(true); });
+    form.addEventListener('submit', function () { showRunning(true, null); });
     // Check the actual destination lock, including after reload or navigation.
     poll();
     window.setInterval(poll, 3000);
