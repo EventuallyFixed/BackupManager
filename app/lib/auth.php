@@ -29,7 +29,16 @@ function bm_save_admin(string $password): void {
 function bm_auth_gate(): void {
     // No authentication bypass: CLI invocation is not a web session.
     if (PHP_SAPI === 'cli') throw new RuntimeException('Authentication gate requires a web request.');
-    if (empty($_SERVER['HTTPS']) || $_SERVER['HTTPS'] === 'off') {
+    // WD My Cloud OS5 exposes HTTPS on port 8543 without always setting
+    // the usual HTTPS CGI variable. Match the working EncDiskManager check.
+    $https = isset($_SERVER['HTTPS'])
+        && $_SERVER['HTTPS'] !== ''
+        && strtolower((string)$_SERVER['HTTPS']) !== 'off';
+    if (!$https) {
+        $https = isset($_SERVER['SERVER_PORT'])
+            && (string)$_SERVER['SERVER_PORT'] === '8543';
+    }
+    if (!$https) {
         http_response_code(403); exit('BackupManager requires HTTPS.');
     }
     ini_set('session.use_strict_mode', '1');
