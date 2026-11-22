@@ -9,7 +9,7 @@ set -Eeuo pipefail
 BM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_SOURCE="$BM_ROOT/app"
 
-STAGE="${BUILDER_STAGE:-/home/steven/Nextcloud/src/EncDiskManager-build-0.5.2}"
+STAGE="${BUILDER_STAGE:-$HOME/NextCloud/src/NAS_Apps/EncDiskManager-build-0.5.2}"
 BUILDER_APP="$STAGE/apps/BackupManager"
 HELPERS="$STAGE/apps/build_helpers.sh"
 APKG_HELPERS="$STAGE/apps/apkg_helpers.sh"
@@ -52,7 +52,7 @@ echo "Stage:   $STAGE"
 [[ -f "$APP_SOURCE/build.sh" ]] || die "app/build.sh is missing."
 [[ -f "$APP_SOURCE/web/index.php" ]] || die "app/web/index.php is missing."
 [[ -f "$APP_SOURCE/lib/auth.php" ]] || die "app/lib/auth.php is missing."
-[[ -f "$HELPERS" ]] || die "Builder build_helpers.sh is missing."
+[[ -f "$HELPERS" ]] || die "Builder build_helpers.sh is missing at $HELPERS. Set BUILDER_STAGE to the existing builder workspace."
 [[ -f "$APKG_HELPERS" ]] || die "Builder apkg_helpers.sh is missing."
 [[ -f "$STAGE/build.sh" ]] || die "Builder root build.sh is missing."
 [[ -d "$STAGE/apps" ]] || die "Builder apps directory is missing."
@@ -65,13 +65,13 @@ sudo docker image inspect "$DOCKER_IMAGE" >/dev/null ||
 # Refuse unexpected paths or a builder workspace that resolves to the
 # original WD-NAS-App-Builder checkout.
 STAGE_REAL="$(realpath "$STAGE")"
-ORIGINAL_BUILDER="/home/steven/Nextcloud/src/WD-NAS-App-Builder-main"
+ORIGINAL_BUILDER="${ORIGINAL_BUILDER:-$HOME/NextCloud/src/WD-NAS-App-Builder-main}"
 
-[[ "$STAGE_REAL" != "$(realpath "$ORIGINAL_BUILDER")" ]] ||
+[[ ! -e "$ORIGINAL_BUILDER" || "$STAGE_REAL" != "$(realpath "$ORIGINAL_BUILDER")" ]] ||
     die "Refusing to use the original builder workspace."
 
-[[ "$STAGE_REAL" == "/home/steven/Nextcloud/src/EncDiskManager-build-0.5.2" ]] ||
-    die "Unexpected builder staging directory; refusing to touch another workspace."
+[[ "$STAGE_REAL" != "$BM_ROOT" ]] ||
+    die "Builder staging directory must be separate from the BackupManager checkout."
 
 # Limit the model to names supported by this builder.
 case " WDCloud WDMyCloud WDMyCloudMirror WDMyCloudEX4100 WDMyCloudEX2100 MyCloudEX2Ultra MyCloudPR4100 MyCloudPR2100 WDMyCloudDL4100 WDMyCloudDL2100 " in
