@@ -133,16 +133,22 @@ ARCHIVE="$STAGE_RELEASE/BackupManager_${VERSION}_armhf.tar.gz"
 BINARY="$STAGE_RELEASE/BackupManager_${VERSION}_${MODEL}.bin"
 
 [[ -s "$ARCHIVE" ]] || die "ARM archive was not produced."
-for required in web/index.php lib/auth.php init.sh install.sh apkg.rc; do
-    tar -tzf "$ARCHIVE" | grep -Eq "(^|/)${required//\//\\/}$" ||
-        die "Required runtime file missing from archive: $required"
-done
 [[ -s "$BINARY" ]] || die "Model package was not produced."
 
 gzip -t "$ARCHIVE" || die "ARM archive failed gzip integrity check."
 
-if tar -tzf "$ARCHIVE" |
-    grep -E '(^|/)(\.git|development|packages)(/|$)' >/dev/null; then
+# Read the archive listing once. Piping tar into grep -q under pipefail can
+# produce a false failure when grep exits early and tar receives SIGPIPE.
+ARCHIVE_LIST="$(tar -tzf "$ARCHIVE")" ||
+    die "Could not read ARM archive contents."
+
+for required in web/index.php lib/auth.php init.sh install.sh apkg.rc; do
+    if ! grep -Eq "(^|/)${required}$" <<< "$ARCHIVE_LIST"; then
+        die "Required runtime file missing from archive: $required"
+    fi
+done
+
+if grep -E '(^|/)(\\.git|development|packages)(/|$)' <<< "$ARCHIVE_LIST" >/dev/null; then
     die "Archive contains unwanted Git, development or package content."
 fi
 
