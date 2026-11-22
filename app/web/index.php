@@ -226,7 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (is_link($folder) || (file_exists($folder) && !is_dir($folder))) $error='Unsafe configuration directory.';
                 elseif ((!is_dir($folder) && !@mkdir($folder, 0700)) || !is_dir($folder)) $error='Cannot create configuration directory.';
                 else {
-                    $payload = json_encode(['version'=>1,'filesystem_uuid'=>$uuid,'sources'=>$requested], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+                    $payload = json_encode(['version'=>1,'filesystem_uuid'=>$uuid,'sources'=>$requested,'pruning'=>(readConfig($selected)['pruning'] ?? ['enabled'=>false,'rules'=>bm_pruning_defaults()])], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
                     $tmp = @tempnam($folder, '.config-');
                     if ($tmp === false || @file_put_contents($tmp, $payload . "\n", LOCK_EX) === false || !@chmod($tmp, 0600) || !@rename($tmp, configPath($selected))) {
                         if ($tmp !== false) @unlink($tmp);
