@@ -62,40 +62,6 @@ function bm_stop_backup(string $mount): int {
 
 function bm_delete_snapshot(string $mount, string $snapshot): void {
     if (!preg_match('/^backup_[0-9]{8}_[0-9]{6}$/D', $snapshot)) {
-        throw new RuntimeException('Invalid backup name.');
-    }
-    if (bm_backup_running($mount)) {
-        throw new RuntimeException('Cannot delete snapshots while a backup is running.');
-    }
-    $root = $mount . '/backup';
-    $target = $root . '/' . $snapshot;
-    if (is_link($root) || !is_dir($root) || is_link($target) || !is_dir($target)
-        || realpath($target) !== realpath($root) . '/' . $snapshot) {
-        throw new RuntimeException('Backup directory is unavailable or unsafe.');
-    }
-    // Remove the current pointer if it refers to the deleted snapshot.
-    $current = $root . '/current';
-    if (is_link($current) && readlink($current) === $snapshot && !unlink($current)) {
-        throw new RuntimeException('Cannot remove the current snapshot pointer.');
-    }
-    // Do not follow symlinks inside the snapshot.
-    $items = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($target, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::CHILD_FIRST
-    );
-    foreach ($items as $item) {
-        $path = $item->getPathname();
-        if ($item->isDir() && !$item->isLink()) {
-            if (!rmdir($path)) throw new RuntimeException('Could not remove directory: ' . $path);
-        } else {
-            if (!unlink($path)) throw new RuntimeException('Could not remove file: ' . $path);
-        }
-    }
-    if (!rmdir($target)) throw new RuntimeException('Could not remove backup directory.');
-}
-
-function bm_delete_snapshot(string $mount, string $snapshot): void {
-    if (!preg_match('/^backup_[0-9]{8}_[0-9]{6}$/D', $snapshot)) {
         throw new RuntimeException('Invalid backup directory.');
     }
     if (bm_backup_running($mount)) {
