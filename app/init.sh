@@ -11,3 +11,20 @@ for script in install.sh init.sh start.sh stop.sh clean.sh preinst.sh remove.sh 
     [ ! -f "${APP_PATH}/${script}" ] || chmod 755 "${APP_PATH}/${script}"
 done
 log "BackupManager web path initialized"
+
+# Private administrator data survives app upgrades.
+DATA_DIR="${APPS_PATH}/_BackupManager"
+if [ -L "$DATA_DIR" ]; then
+    log "ERROR: Private data directory cannot be a symbolic link."
+    exit 1
+fi
+mkdir -p "$DATA_DIR"
+chown root:root "$DATA_DIR"
+chmod 700 "$DATA_DIR"
+if [ ! -f "$DATA_DIR/admin.json" ] && [ ! -f "$DATA_DIR/setup-token" ]; then
+    umask 077
+    php -r 'echo bin2hex(random_bytes(32)), PHP_EOL;' > "$DATA_DIR/setup-token"
+    chown root:root "$DATA_DIR/setup-token"
+    chmod 600 "$DATA_DIR/setup-token"
+    log "Administrator setup code available at $DATA_DIR/setup-token"
+fi
