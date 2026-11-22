@@ -30,6 +30,36 @@ function bm_running_snapshot(string $mount): ?string {
     return $names ? $names[0] : null;
 }
 
+function bm_snapshot_status(string $mount, string $snapshot): string {
+    $file = $mount . '/backup/' . $snapshot . '/.backupmanager-status';
+    $status = trim((string) @file_get_contents($file));
+    if ($status === 'Complete' || $status === 'Error' || $status === 'Cancelled') return $status;
+    if (in_array($snapshot, bm_rsync_processes($mount), true)) return 'Running';
+    return 'Error'; // An unmarked or interrupted snapshot is not proven complete.
+}
+
+function bm_set_snapshot_status(string $mount, string $snapshot, string $status): void {
+    $file = $mount . '/backup/' . $snapshot . '/.backupmanager-status';
+    if (!is_dir(dirname($file)) || is_link($file)) return;
+    // Never overwrite a cancellation recorded by the Stop button.
+    if ($status !== 'Cancelled' && trim((string) @file_get_contents($file)) === 'Cancelled') return;
+    @file_put_contents($file, $status . "\n");
+}
+
+function bm_stop_backup(string $mount): int {
+    $processes = bm_rsync_processes($mount);
+    foreach (array_unique(array_values($processes)) as $snapshot) {
+        bm_set_snapshot_status($mount, $snapshot, 'Cancelled');
+    }
+    foreach (array_keys($processes) as $pid) {
+        if ($pid > 1) {
+            // Only PIDs whose live rsync destination matched this disk.
+            exec('/bin/kill -TERM ' . (int) $pid . ' 2>/dev/null');
+        }
+    }
+    return count($processes);
+}
+
 function bm_run_backup(string $mount, array $disk, array $available, array $config): string {
     $uuid = diskUuid($disk['device']);
     if ($uuid === null || ($config['filesystem_uuid'] ?? '') !== $uuid) {
@@ -72,6 +102,8 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
         if (file_exists($target) || is_link($target) || !mkdir($target, 0755)) {
             throw new RuntimeException('Cannot create a unique snapshot directory.');
         }
+        bm_set_snapshot_status($mount, $snapshot, 'Running');
+        try {
         $current = $root . '/current';
         $previous = null;
         if (is_link($current)) {
@@ -122,6 +154,9 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
                 . ' >> ' . escapeshellarg($log) . ' 2>&1';
             $exit = 0;
             exec($cmd, $ignored, $exit);
+            if (bm_snapshot_status($mount, $snapshot) === 'Cancelled') {
+                throw new RuntimeException('Backup cancelled. Incomplete snapshot retained.');
+            }
             if ($exit !== 0) {
                 throw new RuntimeException('rsync failed for ' . $name . ' (exit ' . $exit . '). See ' . $log . '. Incomplete snapshot retained; current unchanged.');
             }
@@ -131,5 +166,10 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             @unlink($newLink);
             throw new RuntimeException('Backup finished but could not update the current snapshot link.');
         }
+        bm_set_snapshot_status($mount, $snapshot, 'Complete');
         return 'Backup completed: ' . $snapshot;
+        } catch (Throwable $e) {
+            bm_set_snapshot_status($mount, $snapshot, 'Error');
+            throw $e;
+        }
 }
