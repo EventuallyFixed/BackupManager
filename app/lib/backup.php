@@ -283,7 +283,17 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
         }
         bm_set_snapshot_status($mount, $snapshot, 'Complete');
         @unlink($runningLink);
-        return 'Backup completed: ' . $snapshot;
+        $result = 'Backup completed: ' . $snapshot;
+        if (!empty($config['pruning']['enabled'])) {
+            try {
+                $rules = bm_pruning_validate($config['pruning']['rules'] ?? []);
+                $removed = bm_pruning_apply($mount, bm_pruning_plan($mount, $rules));
+                $result .= '; automatically pruned ' . $removed . ' older backup(s).';
+            } catch (Throwable $pruningError) {
+                $result .= '; pruning failed: ' . $pruningError->getMessage();
+            }
+        }
+        return $result;
         } catch (Throwable $e) {
             bm_set_snapshot_status($mount, $snapshot, 'Error');
             if (is_link($runningLink) && readlink($runningLink) === $snapshot) @unlink($runningLink);
