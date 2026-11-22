@@ -109,6 +109,46 @@ function bm_delete_snapshot(string $mount, string $snapshot): void {
     }
 }
 
+// Delete only an older snapshot, never the running snapshot or the current base.
+function bm_thin_oldest(string $mount, string $running): ?string {
+    $root = $mount . '/backup';
+    $current = $root . '/current';
+    $protected = is_link($current) ? basename((string) realpath($current)) : '';
+    $names = [];
+    foreach (scandir($root) ?: [] as $name) {
+        if (!preg_match('/^backup_[0-9]{8}_[0-9]{6}$/D', $name)
+            || $name === $running || $name === $protected
+            || is_link($root . '/' . $name) || !is_dir($root . '/' . $name)) continue;
+        $names[] = $name;
+    }
+    sort($names, SORT_STRING);
+    if (!$names) return null;
+    $name = $names[0];
+    $dir = $root . '/' . $name;
+    $items = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ($items as $item) {
+        $path = $item->getPathname();
+        $ok = $item->isDir() && !$item->isLink() ? @rmdir($path) : @unlink($path);
+        if (!$ok) throw new RuntimeException('Could not thin ' . $path);
+    }
+    if (!@rmdir($dir)) throw new RuntimeException('Could not remove old backup ' . $name);
+    return $name;
+}
+
+function bm_log_has_disk_full(string $log): bool {
+    if (!is_file($log)) return false;
+    $handle = @fopen($log, 'rb');
+    if ($handle === false) return false;
+    $size = filesize($log);
+    if ($size !== false && $size > 131072) fseek($handle, -131072, SEEK_END);
+    $tail = stream_get_contents($handle);
+    fclose($handle);
+    return is_string($tail) && stripos($tail, 'No space left on device') !== false;
+}
+
 function bm_run_backup(string $mount, array $disk, array $available, array $config): string {
     $uuid = diskUuid($disk['device']);
     if ($uuid === null || ($config['filesystem_uuid'] ?? '') !== $uuid) {
@@ -152,6 +192,13 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             throw new RuntimeException('Cannot create a unique snapshot directory.');
         }
         bm_set_snapshot_status($mount, $snapshot, 'Running');
+        $runningLink = $root . '/running';
+        if (is_link($runningLink) || file_exists($runningLink)) {
+            throw new RuntimeException('A running backup pointer already exists; inspect it before starting another backup.');
+        }
+        if (!symlink($snapshot, $runningLink)) {
+            throw new RuntimeException('Could not create running backup pointer.');
+        }
         try {
         $current = $root . '/current';
         $previous = null;
@@ -173,7 +220,7 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             $source = $available[$name];
             if (!is_dir($source)) throw new RuntimeException('Source share disappeared: ' . $name);
             $destination = $target . '/' . $name;
-            if (!mkdir($destination, 0755)) throw new RuntimeException('Cannot create snapshot share directory.');
+            if (!is_dir($destination) && !mkdir($destination, 0755)) throw new RuntimeException('Cannot create snapshot share directory.');
             // Original rsync options, without -R: -aP --delete --log-file and --link-dest.
             // A per-share link destination keeps the same directory structure each run.
             $cmd = '/usr/sbin/rsync -aP --delete'
@@ -201,13 +248,32 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             $cmd .= ' ' . escapeshellarg($source . '/')
                 . ' ' . escapeshellarg($destination . '/')
                 . ' >> ' . escapeshellarg($log) . ' 2>&1';
-            $exit = 0;
-            exec($cmd, $ignored, $exit);
-            if (bm_snapshot_status($mount, $snapshot) === 'Cancelled') {
-                throw new RuntimeException('Backup cancelled. Incomplete snapshot retained.');
-            }
-            if ($exit !== 0) {
-                throw new RuntimeException('rsync failed for ' . $name . ' (exit ' . $exit . '). See ' . $log . '. Incomplete snapshot retained; current unchanged.');
+            // On ENOSPC, remove one old snapshot and retry this share in place.
+            // Rsync can reuse files already copied into the running snapshot.
+            while (true) {
+                $offset = is_file($log) ? (int) filesize($log) : 0;
+                $exit = 0;
+                exec($cmd, $ignored, $exit);
+                if (bm_snapshot_status($mount, $snapshot) === 'Cancelled') {
+                    throw new RuntimeException('Backup cancelled. Incomplete snapshot retained.');
+                }
+                if ($exit === 0) break;
+                clearstatcache(true, $log);
+                $handle = @fopen($log, 'rb');
+                $newLog = '';
+                if ($handle !== false) {
+                    fseek($handle, $offset);
+                    $newLog = (string) stream_get_contents($handle);
+                    fclose($handle);
+                }
+                if (stripos($newLog, 'No space left on device') === false) {
+                    throw new RuntimeException('rsync failed for ' . $name . ' (exit ' . $exit . '). See ' . $log . '. Incomplete snapshot retained; current unchanged.');
+                }
+                $removed = bm_thin_oldest($mount, $snapshot);
+                if ($removed === null) {
+                    throw new RuntimeException('Disk full, but no older snapshot can be safely removed. Current backup preserved; incomplete snapshot retained.');
+                }
+                @file_put_contents($log, "\\nBackupManager: disk full; removed oldest backup " . $removed . " and retrying " . $name . ".\\n", FILE_APPEND);
             }
         }
         $newLink = $root . '/.current-' . $stamp;
@@ -216,9 +282,11 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             throw new RuntimeException('Backup finished but could not update the current snapshot link.');
         }
         bm_set_snapshot_status($mount, $snapshot, 'Complete');
+        @unlink($runningLink);
         return 'Backup completed: ' . $snapshot;
         } catch (Throwable $e) {
             bm_set_snapshot_status($mount, $snapshot, 'Error');
+            if (is_link($runningLink) && readlink($runningLink) === $snapshot) @unlink($runningLink);
             throw $e;
         }
 }
