@@ -102,7 +102,14 @@ fi
 
 # Stage only the NAS-installable runtime payload.
 cp -a "$APP_SOURCE" "$BUILDER_APP"
-chmod +x "$BUILDER_APP/build.sh"
+# WD executes lifecycle scripts directly, so they must be executable in
+# the packaged archive, not only after init.sh runs on the NAS.
+for script in install.sh init.sh start.sh stop.sh clean.sh preinst.sh remove.sh; do
+    [[ -f "$BUILDER_APP/$script" ]] ||
+        die "Required lifecycle script missing: $script"
+    chmod 755 "$BUILDER_APP/$script"
+done
+chmod 755 "$BUILDER_APP/build.sh"
 
 # Check the staged copy is identical to the source, apart from the
 # executable bit applied to build.sh.
@@ -134,6 +141,14 @@ BINARY="$STAGE_RELEASE/BackupManager_${VERSION}_${MODEL}.bin"
 
 [[ -s "$ARCHIVE" ]] || die "ARM archive was not produced."
 [[ -s "$BINARY" ]] || die "Model package was not produced."
+
+# Verify executable permissions as stored in the actual archive.
+for script in install.sh init.sh start.sh stop.sh clean.sh preinst.sh remove.sh; do
+    mode="$(tar -tvzf "$ARCHIVE" "./$script" | awk 'NR == 1 {print $1}')" ||
+        die "Could not inspect packaged permissions for $script"
+    [[ "$mode" == -rwx* ]] ||
+        die "Packaged lifecycle script is not executable: $script ($mode)"
+done
 
 gzip -t "$ARCHIVE" || die "ARM archive failed gzip integrity check."
 
