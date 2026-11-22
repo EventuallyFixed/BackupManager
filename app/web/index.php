@@ -1,12 +1,14 @@
 <?php
 /** BackupManager stage 1: mounted disk discovery, snapshot listing, per-disk source configuration. */
 declare(strict_types=1);
-session_start();
+require_once __DIR__ . '/../lib/auth.php';
+bm_auth_gate();
+
 const SOURCE_ROOT = '/mnt/HD/HD_a2';
 const SHARE_ROOT = '/shares';
 const CONFIG_DIR = '.backupmanager';
 const CONFIG_FILE = 'config.json';
-if (!isset($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(24));
+if (!isset($_SESSION['bm_csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(24));
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function mountDecode(string $s): string { return preg_replace_callback('/\\\\([0-7]{3})/', static fn($m) => chr(octdec($m[1])), $s); }
 function mounts(): array {
