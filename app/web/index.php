@@ -11,11 +11,28 @@ const CONFIG_FILE = 'config.json';
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function mountDecode(string $s): string { return preg_replace_callback('/\\\\([0-7]{3})/', static fn($m) => chr(octdec($m[1])), $s); }
 function isUsbBlockDevice(string $device): bool {
-    // Resolve the kernel's physical device ancestry, not its /dev/sdX letter.
-    // Internal SATA partitions can also be named /dev/sda4.
-    if (!preg_match('#^/dev/(sd[a-z]+)([0-9]+)?$#D', $device, $m)) return false;
-    $sysPath = realpath('/sys/class/block/' . basename($device));
-    return $sysPath !== false && preg_match('#/usb[0-9]+(?:/|$)#', $sysPath) === 1;
+    if (strpos($device, '/dev/') !== 0) return false;
+    $name = basename($device);
+    // Map /dev/mapper/LUKS names to their dm-N kernel block device.
+    $stat = @stat($device);
+    if ($stat === false) return false;
+    $major = ($stat['rdev'] >> 8) & 0xfff;
+    $minor = ($stat['rdev'] & 0xff) | (($stat['rdev'] >> 12) & 0xfff00);
+    $sys = realpath('/sys/dev/block/' . $major . ':' . $minor);
+    if ($sys === false) return false;
+    return blockPathIsUsb($sys, []);
+}
+function blockPathIsUsb(string $sys, array $seen): bool {
+    if (isset($seen[$sys])) return false;
+    $seen[$sys] = true;
+    // Direct USB devices contain a USB bus segment in their sysfs ancestry.
+    if (preg_match('#/usb[0-9]+/#', $sys)) return true;
+    // Device-mapper layers expose underlying block devices as slaves.
+    foreach (glob($sys . '/slaves/*') ?: [] as $slave) {
+        $underlying = realpath($slave);
+        if ($underlying !== false && blockPathIsUsb($underlying, $seen)) return true;
+    }
+    return false;
 }
 function mounts(): array {
     $out = [];
