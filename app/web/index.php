@@ -89,6 +89,7 @@ function snapshots(string $mount): array {
     usort($out, static fn($a,$b) => strcmp($b['name'], $a['name']));
     return $out;
 }
+require_once __DIR__ . '/../lib/backup.php';
 $disks = mounts();
 $selected = (string) ($_POST['disk'] ?? $_GET['disk'] ?? '');
 if (!isset($disks[$selected])) $selected = (count($disks) ? key($disks) : '');
@@ -123,6 +124,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $config = $selected !== '' ? readConfig($selected) : null;
 $uuid = $selected !== '' ? diskUuid($disks[$selected]['device']) : null;
 $valid = $config !== null && $uuid !== null && ($config['filesystem_uuid'] ?? '') === $uuid && count($config['sources']) > 0 && count(array_intersect($config['sources'], array_keys($available))) > 0 && count(array_diff($config['sources'], array_keys($available))) === 0;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'backup' && $error === '') {
+    if (!$valid || $selected === '') {
+        $error = 'A valid USB destination configuration is required.';
+    } else {
+        // Allow long-running rsync without holding the administrator session lock.
+        session_write_close();
+        @set_time_limit(0);
+        try {
+            $message = bm_run_backup($selected, $disks[$selected], $available, $config);
+        } catch (Throwable $e) {
+            $error = $e->getMessage();
+        }
+    }
+}
 $checked = $config['sources'] ?? [];
 $backups = $selected !== '' ? snapshots($selected) : [];
 ?><!doctype html>
@@ -130,7 +145,7 @@ $backups = $selected !== '' ? snapshots($selected) : [];
 <style>body{font:15px system-ui,sans-serif;background:#f5f7fa;color:#1d2939;margin:0}main{max-width:950px;margin:35px auto;padding:0 18px}header{display:flex;align-items:center;justify-content:space-between}h1{font-size:26px}h2{font-size:19px;margin-top:0}.panel{background:white;border:1px solid #e0e5ec;border-radius:12px;padding:22px;margin:18px 0}select,button{font:inherit;padding:9px 12px;border-radius:7px;border:1px solid #b8c1cc}select{width:100%;max-width:650px}button{background:#165caa;color:white;border-color:#165caa;cursor:pointer}button:disabled{background:#d5d9df;border-color:#d5d9df;color:#697586;cursor:not-allowed}.muted{color:#667085}.warn{color:#a15c00}.good{color:#167047}.error{color:#b42318}table{border-collapse:collapse;width:100%}th,td{text-align:left;border-bottom:1px solid #e7eaf0;padding:11px 8px}th{color:#667085}label.share{display:flex;gap:12px;align-items:center;padding:10px;border-bottom:1px solid #eee}code{font-size:12px;overflow-wrap:anywhere}.small{font-size:13px}</style></head><body><main><header><h1>BackupManager</h1><span class="muted">WD My Cloud OS5 · Stage 1</span></header>
 <?php if ($message): ?><p class="good"><?=h($message)?></p><?php endif; ?><?php if ($error): ?><p class="error"><?=h($error)?></p><?php endif; ?>
 <section class="panel"><h2>Destination disk</h2><?php if (!$disks): ?><p class="warn">No mounted USB ext4 destination disks detected.</p><?php else: ?><form method="get"><select name="disk" onchange="this.form.submit()" aria-label="Destination disk"><?php foreach ($disks as $path=>$disk): ?><option value="<?=h($path)?>" <?=$path===$selected?'selected':''?>><?=h($path)?> (<?=h($disk['device'])?>)</option><?php endforeach; ?></select><noscript><button>Choose disk</button></noscript></form><p class="small muted">Filesystem UUID: <?=h($uuid ?? 'Unavailable')?></p><?php endif; ?></section>
-<?php if ($selected !== ''): ?><section class="panel"><h2>Backup status</h2><?php if ($valid): ?><p class="good">Configuration valid. Backup execution will be enabled in a later stage.</p><?php else: ?><p class="warn">No valid backup configuration for this disk. Backups are disabled until you save a valid selection.</p><?php endif; ?><button disabled>Start backup</button></section>
+<?php if ($selected !== ''): ?><section class="panel"><h2>Backup status</h2><?php if ($valid): ?><p class="good">Configuration valid. Ready for incremental backup.</p><?php else: ?><p class="warn">No valid backup configuration for this disk. Backups are disabled until you save a valid selection.</p><?php endif; ?><?php if ($valid): ?><form method="post"><input type="hidden" name="csrf" value="<?=h($_SESSION['bm_csrf'])?>"><input type="hidden" name="disk" value="<?=h($selected)?>"><input type="hidden" name="action" value="backup"><button type="submit">Start backup</button></form><?php else: ?><button disabled>Start backup</button><?php endif; ?></section>
 <section class="panel"><h2>Available backups (<?=count($backups)?>)</h2><table><thead><tr><th>Backup directory</th><th>Date and time (NAS local)</th></tr></thead><tbody><?php foreach ($backups as $b): ?><tr><td><code><?=h($b['name'])?></code></td><td><?=h($b['date'])?></td></tr><?php endforeach; ?><?php if (!$backups): ?><tr><td colspan="2" class="muted">No backups found on this disk.</td></tr><?php endif; ?></tbody></table></section>
 <section class="panel"><h2>Configuration — backup sources</h2><p class="muted">Select shares linked directly to <?=h(SOURCE_ROOT)?>. Settings are saved on this destination disk.</p><form method="post"><input type="hidden" name="csrf" value="<?=h($_SESSION['bm_csrf'])?>"><input type="hidden" name="disk" value="<?=h($selected)?>"><input type="hidden" name="action" value="save"><?php foreach ($available as $name=>$path): ?><label class="share"><input type="checkbox" name="sources[]" value="<?=h($name)?>" <?=in_array($name,$checked,true)?'checked':''?>><strong><?=h($name)?></strong><code class="muted"><?=h($path)?></code></label><?php endforeach; ?><?php if (!$available): ?><p class="warn">No eligible shares detected.</p><?php endif; ?><p><button <?=!$available?'disabled':''?>>Save configuration</button></p></form></section><?php endif; ?>
 </main></body></html>
