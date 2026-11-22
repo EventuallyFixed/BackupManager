@@ -334,6 +334,15 @@ $runningSnapshot = $running ? bm_running_snapshot($selected) : null;
                 var shareSelect = row.querySelector('select[name$="[share]"]');
                 var existing = filtersTable.querySelector('select[name$="[share]"]');
                 if (existing) shareSelect.innerHTML = existing.innerHTML;
+                else {
+                    var shareNames = <?=json_encode(array_keys($available), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
+                    shareNames.forEach(function (name) {
+                        var option = document.createElement('option');
+                        option.value = name;
+                        option.textContent = name;
+                        shareSelect.appendChild(option);
+                    });
+                }
             }
             row.querySelector('select').value = 'exclude';
             row.querySelector('input').value = '';
