@@ -15,6 +15,14 @@ function bm_backup_running(string $mount): bool {
     return !$free;
 }
 
+function bm_running_snapshot(string $mount): ?string {
+    if (!bm_backup_running($mount)) return null;
+    $path = $mount . '/.backupmanager/backup.lock';
+    $name = trim((string) @file_get_contents($path));
+    if (!preg_match('/^backup_[0-9]{8}_[0-9]{6}$/D', $name)) return null;
+    return is_dir($mount . '/backup/' . $name) ? $name : null;
+}
+
 function bm_run_backup(string $mount, array $disk, array $available, array $config): string {
     $uuid = diskUuid($disk['device']);
     if ($uuid === null || ($config['filesystem_uuid'] ?? '') !== $uuid) {
@@ -57,6 +65,11 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
         if (file_exists($target) || is_link($target) || !mkdir($target, 0755)) {
             throw new RuntimeException('Cannot create a unique snapshot directory.');
         }
+        // Publish the exact active snapshot while holding the existing lock.
+        rewind($lock);
+        ftruncate($lock, 0);
+        fwrite($lock, $snapshot . "\n");
+        fflush($lock);
         $current = $root . '/current';
         $previous = null;
         if (is_link($current)) {
@@ -118,6 +131,9 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
         }
         return 'Backup completed: ' . $snapshot;
     } finally {
+        rewind($lock);
+        ftruncate($lock, 0);
+        fflush($lock);
         flock($lock, LOCK_UN);
         fclose($lock);
     }
