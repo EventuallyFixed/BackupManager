@@ -40,12 +40,8 @@ function bm_auth_gate(): void {
     if (!isset($_SESSION['bm_csrf'])) $_SESSION['bm_csrf'] = bin2hex(random_bytes(24));
     $admin = bm_read_admin();
     $error = '';
-    $now = time();
-    $attempts = (int)($_SESSION['bm_failed_attempts'] ?? 0);
-    $lockedUntil = (int)($_SESSION['bm_locked_until'] ?? 0);
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bm_auth_action'])) {
-        if ($lockedUntil > $now) $error='Too many attempts. Please try again later.';
-        elseif (!hash_equals($_SESSION['bm_csrf'], (string)($_POST['bm_auth_csrf'] ?? ''))) $error='Invalid request token.';
+        if (!hash_equals($_SESSION['bm_csrf'], (string)($_POST['bm_auth_csrf'] ?? ''))) $error='Invalid request token.';
         elseif ($_POST['bm_auth_action'] === 'logout') {
             $_SESSION = []; session_regenerate_id(true);
         } elseif ($_POST['bm_auth_action'] === 'setup' && $admin === null) {
@@ -55,20 +51,11 @@ function bm_auth_gate(): void {
             if ($token !== '' && hash_equals($token, (string)($_POST['setup_token'] ?? '')) && strlen($password) >= 12) {
                 bm_save_admin($password); @unlink($tokenPath); $admin = bm_read_admin();
                 session_regenerate_id(true); $_SESSION['bm_authenticated']=true;
-                $_SESSION['bm_failed_attempts']=0; $_SESSION['bm_locked_until']=0;
             } else $error='Invalid setup code or password shorter than 12 characters.';
         } elseif ($_POST['bm_auth_action'] === 'login' && $admin !== null) {
             if (password_verify((string)($_POST['password'] ?? ''), $admin['hash'])) {
                 session_regenerate_id(true); $_SESSION['bm_authenticated']=true;
             } else $error='Invalid password.';
-        }
-    }
-    if ($error !== '' && $error !== 'Too many attempts. Please try again later.') {
-        $_SESSION['bm_failed_attempts'] = ++$attempts;
-        if ($attempts >= 5) {
-            $_SESSION['bm_locked_until'] = $now + 300;
-            $_SESSION['bm_failed_attempts'] = 0;
-            $error = 'Too many attempts. Please try again in five minutes.';
         }
     }
     if ($admin !== null && !empty($_SESSION['bm_authenticated'])) return;
