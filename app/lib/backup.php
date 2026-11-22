@@ -35,7 +35,7 @@ function bm_snapshot_status(string $mount, string $snapshot): string {
     $status = trim((string) @file_get_contents($file));
     if ($status === 'Complete' || $status === 'Error' || $status === 'Cancelled') return $status;
     if (in_array($snapshot, bm_rsync_processes($mount), true)) return 'Running';
-    return 'Error'; // An unmarked or interrupted snapshot is not proven complete.
+    return 'Error - Incomplete'; // An unmarked or interrupted snapshot is not proven complete.
 }
 
 function bm_set_snapshot_status(string $mount, string $snapshot, string $status): void {
