@@ -2,13 +2,14 @@
 set -Eeuo pipefail
 
 # Standalone Backup Manager build orchestrator.
-# Builds through an isolated copy of WD-NAS-App-Builder.
+# Uses the existing isolated WD-NAS-App-Builder staging workspace.
+# Only BackupManager staging and release paths are modified.
 # Does not access or modify a NAS.
 
 BM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_SOURCE="$BM_ROOT/app"
 
-STAGE="${BUILDER_STAGE:-/home/steven/Nextcloud/src/BackupManager-build}"
+STAGE="${BUILDER_STAGE:-/home/steven/Nextcloud/src/EncDiskManager-build-0.5.2}"
 BUILDER_APP="$STAGE/apps/BackupManager"
 HELPERS="$STAGE/apps/build_helpers.sh"
 APKG_HELPERS="$STAGE/apps/apkg_helpers.sh"
@@ -68,8 +69,8 @@ ORIGINAL_BUILDER="/home/steven/Nextcloud/src/WD-NAS-App-Builder-main"
 [[ "$STAGE_REAL" != "$(realpath "$ORIGINAL_BUILDER")" ]] ||
     die "Refusing to use the original builder workspace."
 
-[[ "$STAGE_REAL" == /home/steven/Nextcloud/src/* ]] ||
-    die "Builder staging directory is outside the expected source workspace."
+[[ "$STAGE_REAL" == "/home/steven/Nextcloud/src/EncDiskManager-build-0.5.2" ]] ||
+    die "Unexpected builder staging directory; refusing to touch another workspace."
 
 # Limit the model to names supported by this builder.
 case " WDCloud WDMyCloud WDMyCloudMirror WDMyCloudEX4100 WDMyCloudEX2100 MyCloudEX2Ultra MyCloudPR4100 MyCloudPR2100 WDMyCloudDL4100 WDMyCloudDL2100 " in
