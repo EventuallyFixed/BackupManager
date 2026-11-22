@@ -2,43 +2,32 @@
 /* Incremental rsync snapshots for BackupManager, PHP 7.4. */
 declare(strict_types=1);
 
+function bm_rsync_processes(string $mount): array {
+    $root = $mount . '/backup/';
+    $found = [];
+    foreach (glob('/proc/[0-9]*/cmdline') ?: [] as $file) {
+        $args = @file_get_contents($file);
+        if ($args === false || $args === '') continue;
+        $parts = explode("\0", rtrim($args, "\0"));
+        if (basename($parts[0] ?? '') !== 'rsync') continue;
+        foreach ($parts as $arg) {
+            // Match the exact destination argument, not --link-dest or --log-file.
+            if (preg_match('#^' . preg_quote($root, '#') . '(backup_[0-9]{8}_[0-9]{6})/[^/]+/$#D', $arg, $m)) {
+                $found[(int) basename(dirname($file))] = $m[1];
+                break;
+            }
+        }
+    }
+    return $found;
+}
+
 function bm_backup_running(string $mount): bool {
-    $dir = $mount . '/.backupmanager';
-    if (is_link($dir) || !is_dir($dir)) return false;
-    $path = $dir . '/backup.lock';
-    if (!is_file($path) || is_link($path)) return false;
-    $handle = @fopen($path, 'r');
-    if ($handle === false) return false;
-    $free = @flock($handle, LOCK_EX | LOCK_NB);
-    if ($free) flock($handle, LOCK_UN);
-    fclose($handle);
-    return !$free;
+    return bm_rsync_processes($mount) !== [];
 }
 
 function bm_running_snapshot(string $mount): ?string {
-    if (!bm_backup_running($mount)) return null;
-    $path = $mount . '/.backupmanager/backup.lock';
-    $name = trim((string) @file_get_contents($path));
-    if (preg_match('/^backup_[0-9]{8}_[0-9]{6}$/D', $name)
-        && is_dir($mount . '/backup/' . $name)) return $name;
-
-    // Backups started before snapshot tracking was added have an empty lock.
-    // In that case, identify the newest snapshot newer than the completed
-    // 'current' target. Never label an older completed snapshot as running.
-    $root = $mount . '/backup';
-    if (!is_dir($root) || is_link($root)) return null;
-    $current = realpath($root . '/current');
-    $completed = ($current !== false && dirname($current) === realpath($root))
-        ? basename($current) : '';
-    $candidates = [];
-    foreach (scandir($root) ?: [] as $entry) {
-        if (!preg_match('/^backup_[0-9]{8}_[0-9]{6}$/D', $entry)
-            || !is_dir($root . '/' . $entry) || is_link($root . '/' . $entry)) continue;
-        if ($completed !== '' && strcmp($entry, $completed) <= 0) continue;
-        $candidates[] = $entry;
-    }
-    rsort($candidates, SORT_STRING);
-    return $candidates[0] ?? null;
+    $names = array_values(bm_rsync_processes($mount));
+    return $names ? $names[0] : null;
 }
 
 function bm_run_backup(string $mount, array $disk, array $available, array $config): string {
@@ -58,12 +47,13 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
     if (is_link($configDir) || !is_dir($configDir)) {
         throw new RuntimeException('Destination configuration directory is unavailable.');
     }
-    $lock = fopen($configDir . '/backup.lock', 'c');
-    if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
+    if (bm_backup_running($mount)) {
         throw new RuntimeException('Another backup is already running.');
     }
-    try {
-        // Recheck while holding the per-destination lock.
+    // Process detection replaces the old lock; no persistent PID or lock file.
+    // Simultaneous submissions may still race before rsync starts.
+    {
+        // Recheck destination before beginning.
         if (!isset(mounts()[$mount]) || diskUuid($disk['device']) !== $uuid) {
             throw new RuntimeException('Destination changed before backup started.');
         }
@@ -83,11 +73,6 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
         if (file_exists($target) || is_link($target) || !mkdir($target, 0755)) {
             throw new RuntimeException('Cannot create a unique snapshot directory.');
         }
-        // Publish the exact active snapshot while holding the existing lock.
-        rewind($lock);
-        ftruncate($lock, 0);
-        fwrite($lock, $snapshot . "\n");
-        fflush($lock);
         $current = $root . '/current';
         $previous = null;
         if (is_link($current)) {
@@ -109,9 +94,9 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             if (!is_dir($source)) throw new RuntimeException('Source share disappeared: ' . $name);
             $destination = $target . '/' . $name;
             if (!mkdir($destination, 0755)) throw new RuntimeException('Cannot create snapshot share directory.');
-            // Original user-supplied rsync options: -aPr --delete --log-file and --link-dest.
+            // Original rsync options, without -R: -aP --delete --log-file and --link-dest.
             // A per-share link destination keeps the same directory structure each run.
-            $cmd = '/usr/sbin/rsync -aPr --delete'
+            $cmd = '/usr/sbin/rsync -aP --delete'
                 . ' --log-file=' . escapeshellarg($log);
             // Preserve the exclusions from the supplied rsync script.
             $excludes = [
@@ -133,7 +118,7 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             if ($previous !== null && is_dir($previous . '/' . $name)) {
                 $cmd .= ' --link-dest=' . escapeshellarg($previous . '/' . $name);
             }
-            $cmd .= ' ' . escapeshellarg($source . '/./')
+            $cmd .= ' ' . escapeshellarg($source . '/')
                 . ' ' . escapeshellarg($destination . '/')
                 . ' >> ' . escapeshellarg($log) . ' 2>&1';
             $exit = 0;
@@ -148,11 +133,5 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             throw new RuntimeException('Backup finished but could not update the current snapshot link.');
         }
         return 'Backup completed: ' . $snapshot;
-    } finally {
-        rewind($lock);
-        ftruncate($lock, 0);
-        fflush($lock);
-        flock($lock, LOCK_UN);
-        fclose($lock);
     }
 }
