@@ -32,10 +32,11 @@ function bm_running_snapshot(string $mount): ?string {
 
 function bm_snapshot_status(string $mount, string $snapshot): string {
     $file = $mount . '/backup/' . $snapshot . '/.backupmanager-status';
-    $status = trim((string) @file_get_contents($file));
-    if ($status === 'Complete' || $status === 'Error' || $status === 'Cancelled') return $status;
+    $status = is_file($file) && !is_link($file) ? trim((string) @file_get_contents($file)) : '';
+    if ($status === 'Error' || $status === 'Cancelled') return $status;
     if (in_array($snapshot, bm_rsync_processes($mount), true)) return 'Running';
-    return 'Error - Incomplete'; // An unmarked or interrupted snapshot is not proven complete.
+    if ($status === 'Running' || ($status !== '' && $status !== 'Complete')) return 'Error - Incomplete';
+    return 'Complete'; // Legacy snapshots without a marker are assumed successful.
 }
 
 function bm_set_snapshot_status(string $mount, string $snapshot, string $status): void {
@@ -196,7 +197,11 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
             @unlink($newLink);
             throw new RuntimeException('Backup finished but could not update the current snapshot link.');
         }
-        bm_set_snapshot_status($mount, $snapshot, 'Complete');
+        // A successful snapshot needs no status marker.
+        $statusFile = $target . '/.backupmanager-status';
+        if (is_file($statusFile) && !is_link($statusFile) && !@unlink($statusFile)) {
+            throw new RuntimeException('Backup finished but could not clear its status marker.');
+        }
         return 'Backup completed: ' . $snapshot;
         } catch (Throwable $e) {
             bm_set_snapshot_status($mount, $snapshot, 'Error');
