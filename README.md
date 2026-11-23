@@ -1,4 +1,4 @@
-# BackupManager
+# Backup Manager
 Incremental Backups on the WD Ex4100/OS5 NAS
 
 Intended for WD My Cloud OS5, initially targeting the WD MyCloud EX4100 model (armhf - Marvell Armada).
@@ -18,6 +18,14 @@ If you choose to install this it is _at your own risk_: **Be sure and have backu
 This is a simple PHP based application that manages backups using 'rsync' in a manner similar to Apple's Time Machine, where incremental backups happen after the first complete backup. It uses Hard Links so files are copied from backup to backup without additional disk space being consumed. While it writes per-disk configuration to the attached backup disk, the pruning function acts globally, when used. If there is not enough space on the disk the oldest backup is removed and it will try again.
 
 The config directory on the attached disk is created only when saving a configuration, and only on the target disk. Backup and log directories are not created during discovery but on creation of the backup.
+
+For an EX4100 with the standard application path, the setup code is stored at:
+
+```sh
+cat /mnt/HD/HD_a2/Nas_Prog/_BackupManager/setup-token
+```
+
+Run this in an appropriately privileged SSH session on your NAS. Keep the code private. It is removed after administrator setup.
 
 # Main Features
 
