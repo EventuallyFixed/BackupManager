@@ -245,6 +245,13 @@ function bm_run_backup(string $mount, array $disk, array $available, array $conf
                 $offset = is_file($log) ? (int) filesize($log) : 0;
                 $exit = 0;
                 exec($cmd, $ignored, $exit);
+                // Some WD NAS rsync builds leave a stray _un file in the source share.
+                // Remove only a regular file, never a directory or symbolic link.
+                $strayFile = $source . '/_un';
+                clearstatcache(true, $strayFile);
+                if (is_file($strayFile) && !is_link($strayFile)) {
+                    @unlink($strayFile);
+                }
                 if (bm_snapshot_status($mount, $snapshot) === 'Cancelled') {
                     throw new RuntimeException('Backup cancelled. Incomplete snapshot retained.');
                 }
