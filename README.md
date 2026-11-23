@@ -4,7 +4,7 @@ Incremental Backups on the WD Ex4100/OS5 NAS
 Intended for WD My Cloud OS5, initially targeting the WD MyCloud EX4100 model (armhf - Marvell Armada).
 
 ## Implemented
-- Read mounted ext4 destination filesystems from `/proc/mounts` (excluding source volume and descendants): See companion development - EncDiskManager
+- Read mounted ext4 destination filesystems from `/proc/mounts` (excluding source volume and descendants): See companion development - [EncDiskManager](https://github.com/EventuallyFixed/EncDiskManager)
 - Select a destination disk.
 - Discover direct child directories of `/mnt/HD/HD_a2` via symbolic links in `/shares` (excludes `Volume_1`).
 - Save per-destination source selections to `<mount>/.backupmanager/config.json` using the filesystem UUID.
