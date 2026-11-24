@@ -53,6 +53,8 @@ function bm_auth_gate(): void {
         if (!hash_equals($_SESSION['bm_csrf'], (string)($_POST['bm_auth_csrf'] ?? ''))) $error='Invalid request token.';
         elseif ($_POST['bm_auth_action'] === 'logout') {
             $_SESSION = []; session_regenerate_id(true);
+            header('Location: ?', true, 303);
+            exit;
         } elseif ($_POST['bm_auth_action'] === 'setup' && $admin === null) {
             $tokenPath = bm_token_file();
             $token = !is_link($tokenPath) && is_file($tokenPath) ? trim((string)file_get_contents($tokenPath)) : '';
@@ -60,10 +62,16 @@ function bm_auth_gate(): void {
             if ($token !== '' && hash_equals($token, (string)($_POST['setup_token'] ?? '')) && strlen($password) >= 12) {
                 bm_save_admin($password); @unlink($tokenPath); $admin = bm_read_admin();
                 session_regenerate_id(true); $_SESSION['bm_authenticated']=true;
+                // Finish authentication before processing application requests.
+                header('Location: ?', true, 303);
+                exit;
             } else $error='Invalid setup code or password shorter than 12 characters.';
         } elseif ($_POST['bm_auth_action'] === 'login' && $admin !== null) {
             if (password_verify((string)($_POST['password'] ?? ''), $admin['hash'])) {
                 session_regenerate_id(true); $_SESSION['bm_authenticated']=true;
+                // Finish authentication before processing application requests.
+                header('Location: ?', true, 303);
+                exit;
             } else $error='Invalid password.';
         }
     }
