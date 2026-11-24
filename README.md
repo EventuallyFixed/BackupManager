@@ -31,12 +31,13 @@ Run this in an appropriately privileged SSH session on your NAS. Keep the code p
 
 ## List of backups
 Selecting a disk attached via USB changes the details beneath
-<img width="963" height="679" alt="image" src="https://github.com/user-attachments/assets/a01fb9da-7b91-4fca-a9c0-7de418d9917b" />
+<img width="963" height="679" alt="Backups" src="https://github.com/user-attachments/assets/bff0ed70-0558-44f2-a4db-478fe70bd989" />
 
 ## Per-disk Configuration
 The application knows it 'owns' the disk by writing a configuration there.
-<img width="967" height="707" alt="image" src="https://github.com/user-attachments/assets/7c165a1f-7493-4e27-b309-e3ade63ab040" />
+<img width="967" height="707" alt="Configuration" src="https://github.com/user-attachments/assets/ae0e2db9-7a38-43e2-a04f-74765197c5cb" />
 
 ## Backup Pruning
 A wide range of options to prune the backups on the selected disk
-<img width="967" height="707" alt="image" src="https://github.com/user-attachments/assets/9cb80df5-7847-4b3e-bb84-b9b62dbdcf68" />
+<img width="959" height="786" alt="Pruning" src="https://github.com/user-attachments/assets/a5b35241-90c2-4750-8e10-f56bcfac8e6c" />
+
